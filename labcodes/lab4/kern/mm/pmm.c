@@ -363,7 +363,7 @@ pmm_init(void) {
 // return vaule: the kernel virtual address of this pte
 pte_t *
 get_pte(pde_t *pgdir, uintptr_t la, bool create) {
-    /* LAB2 EXERCISE 2: YOUR CODE
+    /* 2012011291 EXERCISE 2: YOUR CODE
      *
      * If you need to visit a physical address, please use KADDR()
      * please read pmm.h for useful macros
@@ -396,6 +396,22 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+    pde_t pde=pgdir[PDX(la)];	//一级页表中的内容
+    if(!(pde&PTE_P))	//若不存在
+    {
+    	if(!create)	//不许创建新表项
+    		return NULL;
+    	struct Page *p=alloc_page();
+    	if(!p)	//不能分配新表项
+    		return NULL;
+    	set_page_ref(p, 1);
+    	uintptr_t pa = page2pa(p);		//get linear address of page
+    	memset(KADDR(pa), 0, PGSIZE);	//clear page content using memset
+    	pgdir[PDX(la)]=pa|PTE_P|PTE_W|PTE_U;
+    }
+    uintptr_t addr=PDE_ADDR(pgdir[PDX(la)]);
+    return &((pte_t *)KADDR(addr))[PTX(la)];
+
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -416,7 +432,7 @@ get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
 //note: PT is changed, so the TLB need to be invalidate 
 static inline void
 page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
-    /* LAB2 EXERCISE 3: YOUR CODE
+    /* 2012011291 EXERCISE 3: YOUR CODE
      *
      * Please check if ptep is valid, and tlb must be manually updated if mapping is updated
      *
@@ -441,6 +457,16 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+    if (*ptep & PTE_P)	//若pte有效
+    {
+        struct Page *page = pte2page(*ptep);	//找到存储的那一页
+        page->ref--;	//ref-1
+        if (!page->ref)	//若减到0
+            free_page(page);	//free this page when page reference reachs 0
+        *ptep = 0;	//clear second page table entry
+        tlb_invalidate(pgdir, la);	//flush tlb
+    }
+
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte

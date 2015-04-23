@@ -15,7 +15,7 @@
 /* ------------- process/thread mechanism design&implementation -------------
 (an simplified Linux process/thread mechanism )
 introduction:
-  ucore implements a simple process/thread mechanism. process contains the independent memory sapce, at least one threads
+  ucore implements a simple process/thread mechanism. process contains the independent memory space, at least one threads
 for execution, the kernel data(for management), processor state (for context switch), files(in lab6), etc. ucore needs to
 manage all these details efficiently. In ucore, a thread is just a special kind of process(share process's memory).
 ------------------------------
@@ -63,7 +63,7 @@ list_entry_t proc_list;
 
 #define HASH_SHIFT          10
 #define HASH_LIST_SIZE      (1 << HASH_SHIFT)
-#define pid_hashfn(x)       (hash32(x, HASH_SHIFT))
+#define pid_hashfn(x)       (hash32(x, HASH_SHIFT))    //将x hash为10bit
 
 // has list for process set based on pid
 static list_entry_t hash_list[HASH_LIST_SIZE];
@@ -83,10 +83,12 @@ void switch_to(struct context *from, struct context *to);
 
 // alloc_proc - alloc a proc_struct and init all fields of proc_struct
 static struct proc_struct *
-alloc_proc(void) {
+alloc_proc(void)
+{
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
-    if (proc != NULL) {
-    //LAB4:EXERCISE1 YOUR CODE
+    if (proc != NULL)
+    {
+    //2012011291:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
      *       enum proc_state state;                      // Process state
@@ -102,6 +104,18 @@ alloc_proc(void) {
      *       uint32_t flags;                             // Process flag
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
+    	proc->state=PROC_UNINIT;
+    	proc->pid=-1;
+    	proc->runs=0;
+    	proc->kstack=0;
+    	proc->need_resched=0;
+    	proc->parent=NULL;
+    	proc->mm=NULL;
+    	memset(&(proc->context),0,sizeof(proc->context));
+    	proc->tf=NULL;
+    	proc->cr3=boot_cr3;
+    	proc->flags=0;
+    	memset((proc->name),0,PROC_NAME_LEN);
     }
     return proc;
 }
@@ -132,23 +146,29 @@ get_pid(void) {
         last_pid = 1;
         goto inside;
     }
-    if (last_pid >= next_safe) {
-    inside:
-        next_safe = MAX_PID;
-    repeat:
-        le = list;
-        while ((le = list_next(le)) != list) {
+    if (last_pid >= next_safe)
+    {
+		inside:
+			next_safe = MAX_PID;
+		repeat:
+			le = list;
+        while ((le = list_next(le)) != list)
+        {
             proc = le2proc(le, list_link);
-            if (proc->pid == last_pid) {
-                if (++ last_pid >= next_safe) {
-                    if (last_pid >= MAX_PID) {
+            if (proc->pid == last_pid)
+            {
+                if (++ last_pid >= next_safe)
+                {
+                    if (last_pid >= MAX_PID)
+                    {
                         last_pid = 1;
                     }
                     next_safe = MAX_PID;
                     goto repeat;
                 }
             }
-            else if (proc->pid > last_pid && next_safe > proc->pid) {
+            else if (proc->pid > last_pid && next_safe > proc->pid)
+            {
                 next_safe = proc->pid;
             }
         }
@@ -271,7 +291,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    //LAB4:EXERCISE2 YOUR CODE
+    //2012011291:EXERCISE2 YOUR CODE
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
      * MACROs or Functions:
@@ -296,6 +316,35 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //    5. insert proc_struct into hash_list && proc_list
     //    6. call wakup_proc to make the new child process RUNNABLE
     //    7. set ret vaule using child proc's pid
+    proc=alloc_proc();
+    if(proc==NULL)  //此处参考了答案。忘记了内存不够的情况。
+    {
+    	goto fork_out;
+    }
+    if(setup_kstack(proc)!=0)
+    {
+    	//goto fork_out;
+    	goto bad_fork_cleanup_proc;  //参考答案。原来写作了上一行，未清除空间。
+    }
+    if(copy_mm(clone_flags,proc)!=0)
+    {
+    	//goto fork_out;
+    	goto bad_fork_cleanup_kstack;  //参考答案。原来写作了上一行，未清除空间。
+    }
+    copy_thread(proc,stack,tf);
+    bool intr_flag;
+    local_intr_save(intr_flag);    //关中断。看了答案以后才知道。
+    {
+    proc->pid=get_pid();
+    hash_proc(proc);
+    list_add(&proc_list,&(proc->list_link));
+    nr_process++;
+    }
+    local_intr_restore(intr_flag);    //开中断。
+    wakeup_proc(proc);
+    ret=proc->pid;
+
+
 fork_out:
     return ret;
 
