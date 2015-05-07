@@ -57,6 +57,14 @@ idt_init(void) {
      /* LAB5 YOUR CODE */ 
      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
      //so you should setup the syscall interrupt gate in here
+    extern uintptr_t __vectors[];
+    int i;
+    for (i = 0; i < 256; i ++)
+    {
+        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+    }
+    SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+    lidt(&idt_pd);
 }
 
 static const char *
@@ -214,17 +222,17 @@ trap_dispatch(struct trapframe *tf) {
     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages,
     then you can add code here. 
 #endif
-        /* LAB1 YOUR CODE : STEP 3 */
+        /* LAB1 2012011291 : STEP 3 */
         /* handle the timer interrupt */
         /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
          * (3) Too Simple? Yes, I think so!
          */
-        /* LAB5 YOUR CODE */
+        /* LAB5 2012011291 */
         /* you should upate you lab1 code (just add ONE or TWO lines of code):
          *    Every TICK_NUM cycle, you should set current process's current->need_resched = 1
          */
-        /* LAB6 YOUR CODE */
+        /* LAB6 2012011291 */
         /* IMPORTANT FUNCTIONS:
 	     * run_timer_list
 	     *----------------------
@@ -232,7 +240,15 @@ trap_dispatch(struct trapframe *tf) {
          *    Every tick, you should update the system time, iterate the timers, and trigger the timers which are end to call scheduler.
          *    You can use one funcitons to finish all these things.
          */
-        break;
+		/*if (++ticks % TICK_NUM == 0)
+		{
+			print_ticks();
+			current->need_resched=1;
+		}*/
+    	ticks ++;
+        assert(current != NULL);	//看了答案以后加的。帮助debug
+        sched_class_proc_tick(current); 	//该函数去掉static属性才能调用
+		break;
     case IRQ_OFFSET + IRQ_COM1:
         c = cons_getc();
         cprintf("serial [%03d] %c\n", c, c);

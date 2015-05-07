@@ -353,7 +353,7 @@ check_pgfault(void) {
     assert(sum == 0);
 
     page_remove(pgdir, ROUNDDOWN(addr, PGSIZE));
-    free_page(pa2page(pgdir[0]));
+    free_page(pde2page(pgdir[0]));
     pgdir[0] = 0;
 
     mm->pgdir = NULL;
@@ -452,14 +452,14 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *
     */
 #if 0
-    /*LAB3 EXERCISE 1: YOUR CODE*/
+    /*LAB3 EXERCISE 1: 2012011291*/
     ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
     if (*ptep == 0) {
                             //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
 
     }
     else {
-    /*LAB3 EXERCISE 2: YOUR CODE
+    /*LAB3 EXERCISE 2: 2012011291
     * Now we think this pte is a  swap entry, we should load data from disk to a page with phy addr,
     * and map the phy addr with logical addr, trigger swap manager to record the access situation of this page.
     *
@@ -493,7 +493,36 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         }
    }
 #endif
-   ret = 0;
+    ptep=get_pte(mm->pgdir, addr, 1);      //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+    if(!ptep)
+    {
+    	cprintf("get_pte returns NULL\n");
+    	goto failed;
+    }
+    if (*ptep == 0)
+    {
+    	struct Page* pp=pgdir_alloc_page(mm->pgdir, addr, perm);//(2) if the phy addr isn't exist, then alloc a page
+    	if(!pp)													// and map the phy addr with logical addr
+    	{
+    		cprintf("pgdir_alloc_page returns NULL\n");
+    		goto failed;
+    	}
+    }
+    else if(swap_init_ok)//意味着对应的页在磁盘中
+    {
+    	struct Page* page;
+    	ret=swap_in(mm, addr, &page); //交换进来,存于page指向的内容中
+    	if(ret!=0)
+    		goto failed;
+    	page_insert(mm->pgdir, page, addr, perm);	//建立map：addr到page的物理地址
+    	swap_map_swappable(mm, addr, page, 1);	//set the page swappable
+    }
+    else
+    {
+    	goto failed;
+    }
+
+    ret = 0;
 failed:
     return ret;
 }

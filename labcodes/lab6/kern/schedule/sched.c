@@ -30,7 +30,7 @@ sched_class_pick_next(void) {
     return sched_class->pick_next(rq);
 }
 
-static void
+void
 sched_class_proc_tick(struct proc_struct *proc) {
     if (proc != idleproc) {
         sched_class->proc_tick(rq, proc);
@@ -170,7 +170,7 @@ run_timer_list(void) {
                 timer = le2timer(le, timer_link);
             }
         }
-        sched_class_proc_tick(current);
+        sched_class_proc_tick(current); //去掉static属性
     }
     local_intr_restore(intr_flag);
 }
