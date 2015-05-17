@@ -493,7 +493,36 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         }
    }
 #endif
-   ret = 0;
+    ptep=get_pte(mm->pgdir, addr, 1);      //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+    if(!ptep)
+    {
+    	cprintf("get_pte returns NULL\n");
+    	goto failed;
+    }
+    if (*ptep == 0)
+    {
+    	struct Page* pp=pgdir_alloc_page(mm->pgdir, addr, perm);//(2) if the phy addr isn't exist, then alloc a page
+    	if(!pp)													// and map the phy addr with logical addr
+    	{
+    		cprintf("pgdir_alloc_page returns NULL\n");
+    		goto failed;
+    	}
+    }
+    else if(swap_init_ok)//意味着对应的页在磁盘中
+    {
+    	struct Page* page;
+    	ret=swap_in(mm, addr, &page); //交换进来,存于page指向的内容中
+    	if(ret!=0)
+    		goto failed;
+    	page_insert(mm->pgdir, page, addr, perm);	//建立map：addr到page的物理地址
+    	swap_map_swappable(mm, addr, page, 1);	//set the page swappable
+    }
+    else
+    {
+    	goto failed;
+    }
+
+    ret = 0;
 failed:
     return ret;
 }

@@ -396,6 +396,21 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+    pde_t pde=pgdir[PDX(la)];	//一级页表中的内容
+    if(!(pde&PTE_P))	//若不存在
+    {
+    	if(!create)	//不许创建新表项
+    		return NULL;
+    	struct Page *p=alloc_page();
+    	if(!p)	//不能分配新表项
+    		return NULL;
+    	set_page_ref(p, 1);
+    	uintptr_t pa = page2pa(p);		//get linear address of page
+    	memset(KADDR(pa), 0, PGSIZE);	//clear page content using memset
+    	pgdir[PDX(la)]=pa|PTE_P|PTE_W|PTE_U;
+    }
+    uintptr_t addr=PDE_ADDR(pgdir[PDX(la)]);
+    return &((pte_t *)KADDR(addr))[PTX(la)];
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -441,6 +456,15 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+    if (*ptep & PTE_P)	//若pte有效
+    {
+        struct Page *page = pte2page(*ptep);	//找到存储的那一页
+        page->ref--;	//ref-1
+        if (!page->ref)	//若减到0
+            free_page(page);	//free this page when page reference reachs 0
+        *ptep = 0;	//clear second page table entry
+        tlb_invalidate(pgdir, la);	//flush tlb
+    }
 }
 
 void
@@ -508,7 +532,7 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
         assert(page!=NULL);
         assert(npage!=NULL);
         int ret=0;
-        /* LAB5:EXERCISE2 YOUR CODE
+        /* LAB5:EXERCISE2 2012011291
          * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
          *
          * Some Useful MACROs and DEFINEs, you can use them in below implementation.
@@ -522,7 +546,11 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
          * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
          * (4) build the map of phy addr of  nage with the linear addr start
          */
-        assert(ret == 0);
+        void* src_kvaddr=page2kva(page);
+        void* dst_kvaddr=page2kva(npage);
+        memcpy(dst_kvaddr,src_kvaddr,PGSIZE);
+        ret=page_insert(to, npage, start, perm);
+        assert(ret == 0); //参考答案
         }
         start += PGSIZE;
     } while (start != 0 && start < end);
