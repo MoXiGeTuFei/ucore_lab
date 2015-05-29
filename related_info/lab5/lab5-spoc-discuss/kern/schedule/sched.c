@@ -4,15 +4,20 @@
 #include <sched.h>
 #include <assert.h>
 
+//myz
+char* myzStates[]={"PROC_UNINIT","PROC_SLEEPING","PROC_RUNNABLE","PROC_ZOMBIE"};
+
 void
 wakeup_proc(struct proc_struct *proc) {
     assert(proc->state != PROC_ZOMBIE);
+    cprintf("myz3 before wake up: id: %d ; state: %s\n",proc->pid,myzStates[proc->state]);
     bool intr_flag;
     local_intr_save(intr_flag);
     {
         if (proc->state != PROC_RUNNABLE) {
             proc->state = PROC_RUNNABLE;
             proc->wait_state = 0;
+            cprintf("myz4 after wake up: id: %d ; state: %s\n",proc->pid,myzStates[proc->state]);
         }
         else {
             warn("wakeup runnable process.\n");

@@ -4,10 +4,15 @@
 #include <sched.h>
 #include <assert.h>
 
+//qw
+char* qwStates[]={"PROC_UNINIT","PROC_SLEEPING","PROC_RUNNABLE","PROC_ZOMBIE"};
+
 void
 wakeup_proc(struct proc_struct *proc) {
+	cprintf("qw3 before wake up: id: %d ; state: %s\n",proc->pid,qwStates[proc->state]);
     assert(proc->state != PROC_ZOMBIE && proc->state != PROC_RUNNABLE);
     proc->state = PROC_RUNNABLE;
+	cprintf("qw4 after wake up: id: %d ; state: %s\n",proc->pid,qwStates[proc->state]);
 }
 
 void

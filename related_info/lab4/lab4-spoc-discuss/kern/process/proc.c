@@ -66,21 +66,28 @@ struct proc_struct *idleproc = NULL;
 // init procs
 struct proc_struct *initproc1 = NULL;
 struct proc_struct *initproc2 = NULL;
+struct proc_struct *initproc3 = NULL;
+struct proc_struct *initproc4 = NULL;
 // current proc
 struct proc_struct *current = NULL;
 
 static int nr_process = 0;
 
+//myz
+char* myzStatus[]={"PROC_UNINIT","PROC_SLEEPING","PROC_RUNNABLE","PROC_ZOMBIE"};
+int myzNum = 0;
+
 void kernel_thread_entry(void);
 void forkrets(struct trapframe *tf);
 void switch_to(struct context *from, struct context *to);
+static int init_main(void *arg);
 
 // alloc_proc - alloc a proc_struct and init all fields of proc_struct
 static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
-    //LAB4:EXERCISE1 2012011346
+    //LAB4:EXERCISE1 2012011291
     /*
      * below fields in proc_struct need to be initialized
      *       enum proc_state state;                      // Process state
@@ -158,15 +165,47 @@ get_pid(void) {
 // NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
 void
 proc_run(struct proc_struct *proc) {
+	cprintf("myz... run id:%d state:%s\n",proc->pid, myzStatus[proc->state]);
     if (proc != current) {
         bool intr_flag;
         struct proc_struct *prev = current, *next = proc;
+        struct proc_struct *myz = current;
+        //cprintf("myz... before switch:prev: %d state %d next:%d state %d\n",prev->pid,prev->state ,next->pid,next->state);
         local_intr_save(intr_flag);
-        {
+		{
+
+			/*
+			if(current->pid == 2 && myzNum == 0)
+			{
+				myzNum = 1;
+				int pid4= kernel_thread(init_main, "myz... init main4: Hello world!!", 0);
+				initproc4 = find_proc(pid4);
+				set_proc_name(initproc4, "init4");
+				cprintf("proc_init:: Created kernel thread init_main--> pid: %d, name: %s, parent:%d\n",initproc4->pid, initproc4->name, initproc4->parent->pid);
+				//current->wait_state = WT_CHILD;
+			}
+			*/
+
             current = proc;
             load_esp0(next->kstack + KSTACKSIZE);
             lcr3(next->cr3);
+
+            int temp1 = next->state;
+            char temp2[10];
+            strcpy(temp2,myzStatus[next->state]);
+            if(temp1 == 2)
+            	strcpy(temp2,"READY");
+
+            cprintf("myz1... before switch:prev: %d state %s\n",prev->pid,myzStatus[prev->state]);
+            cprintf("myz1... before switch:next: %d state %s (actrual: %s)\n",next->pid,myzStatus[next->state],temp2);
             switch_to(&(prev->context), &(next->context));
+
+            temp1 = next->state;
+            strcpy(temp2,myzStatus[next->state]);
+            if(temp1 == 2)
+              	strcpy(temp2,"READY");
+            cprintf("myz2... after switch:prev: %d state %s\n",myz->pid,myzStatus[myz->state]);
+            cprintf("myz2... after switch:next: %d state %s (actrual: %s)\n",next->pid,myzStatus[next->state],temp2);
         }
         local_intr_restore(intr_flag);
     }
@@ -256,7 +295,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    //LAB4:EXERCISE2 2012011346
+    //LAB4:EXERCISE2 2012011291
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
      * MACROs or Functions:
@@ -312,6 +351,7 @@ int
 do_wait(int pid, int *code_store) {
     struct proc_struct *proc;
     bool intr_flag, haskid;
+	//cprintf("myz...before do_wait: begin %d state %d\n",proc->pid, proc->state);
 repeat:
 	cprintf("do_wait: begin\n");
     haskid = 0;
@@ -321,6 +361,7 @@ repeat:
 		if (proc != NULL) {
 			 haskid = 1;
 		    if (proc->state == PROC_ZOMBIE) {
+		    	cprintf("myz...child zombie: id %d state PROC_ZOMBIE\n",proc->pid);
 			     goto found;
 		   }
 		}
@@ -328,6 +369,7 @@ repeat:
     if (haskid) {
 		cprintf("do_wait: has kid begin\n");
         current->state = PROC_SLEEPING;
+        cprintf("myz...before sleep: id %d state PROC_SLEEPING\n",proc->pid);
         current->wait_state = WT_CHILD;
         schedule();
         goto repeat;
@@ -342,6 +384,7 @@ found:
 
     local_intr_save(intr_flag);
     {
+    	cprintf("myz5...remove_links indicate thread dead, id: %d, state: Dead\n",proc->pid);
         remove_links(proc);
     }
     local_intr_restore(intr_flag);
@@ -358,6 +401,7 @@ do_exit(int error_code) {
     if (current == idleproc) {
         panic("idleproc exit.\n");
     }
+	cprintf("myz... before do_exit: proc pid %d will exit, state is %s\n", current->pid, myzStatus[current->state]);
 	cprintf(" do_exit: proc pid %d will exit\n", current->pid);
 	cprintf(" do_exit: proc  parent %x\n", current->parent);
     current->state = PROC_ZOMBIE;
@@ -367,6 +411,7 @@ do_exit(int error_code) {
     {
         proc = current->parent;
         if (proc->wait_state == WT_CHILD) {
+        	cprintf("myz... change to parent: pid %d state %s\n", proc->pid, myzStatus[proc->state]);
             wakeup_proc(proc);
         }
 	}
@@ -409,17 +454,21 @@ proc_init(void) {
 
     int pid1= kernel_thread(init_main, "init main1: Hello world!!", 0);
     int pid2= kernel_thread(init_main, "init main2: Hello world!!", 0);
-    if (pid1 <= 0 || pid2<=0) {
+    int pid3= kernel_thread(init_main, "myz... init main3: Hello world!!", 0);
+    if (pid1 <= 0 || pid2<=0 || pid3<=0) {
         panic("create kernel thread init_main1 or 2 failed.\n");
     }
 
     initproc1 = find_proc(pid1);
 	initproc2 = find_proc(pid2);
+	initproc3 = find_proc(pid3);
     set_proc_name(initproc1, "init1");
 	set_proc_name(initproc2, "init2");
+	set_proc_name(initproc3, "init3");
     cprintf("proc_init:: Created kernel thread init_main--> pid: %d, name: %s\n",initproc1->pid, initproc1->name);
 	cprintf("proc_init:: Created kernel thread init_main--> pid: %d, name: %s\n",initproc2->pid, initproc2->name);
-    assert(idleproc != NULL && idleproc->pid == 0);
+	cprintf("proc_init:: Created kernel thread init_main--> pid: %d, name: %s\n",initproc3->pid, initproc3->name);
+	assert(idleproc != NULL && idleproc->pid == 0);
 }
 
 // cpu_idle - at the end of kern_init, the first kernel thread idleproc will do below works

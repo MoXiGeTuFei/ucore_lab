@@ -78,6 +78,10 @@ struct proc_struct *current = NULL;
 
 static int nr_process = 0;
 
+//myz
+char* myzStatus[]={"PROC_UNINIT","PROC_SLEEPING","PROC_RUNNABLE","PROC_ZOMBIE"};
+int myzNum = 0;
+
 void kernel_thread_entry(void);
 void forkrets(struct trapframe *tf);
 void switch_to(struct context *from, struct context *to);
@@ -203,15 +207,48 @@ get_pid(void) {
 // NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
 void
 proc_run(struct proc_struct *proc) {
+	cprintf("myz... run id:%d state:%s\n",proc->pid, myzStatus[proc->state]);
     if (proc != current) {
         bool intr_flag;
         struct proc_struct *prev = current, *next = proc;
+
+        bool prev_kernel = (prev->cr3 == boot_cr3);
+        int prev_pid = prev->pid;
+
+        bool next_kernel = (next->cr3 == boot_cr3);
+        int next_pid = next->pid;
+
+        struct proc_struct *myz = current;
         local_intr_save(intr_flag);
         {
             current = proc;
             load_esp0(next->kstack + KSTACKSIZE);
             lcr3(next->cr3);
+
+
+            int temp1 = next->state;
+            char temp2[10];
+            strcpy(temp2,myzStatus[next->state]);
+            if(temp1 == 2)
+            	strcpy(temp2,"READY");
+
+            cprintf("myz1... before switch:prev: %d state %s\n",prev->pid,myzStatus[prev->state]);
+            cprintf("myz1... before switch:next: %d state %s (actrual: %s)\n",next->pid,myzStatus[next->state],temp2);
+
+
             switch_to(&(prev->context), &(next->context));
+
+
+            temp1 = next->state;
+            strcpy(temp2,myzStatus[next->state]);
+            if(temp1 == 2)
+            	strcpy(temp2,"READY");
+            cprintf("myz2... after switch:prev: %d state %s\n",myz->pid,myzStatus[myz->state]);
+            cprintf("myz2... after switch:next: %d state %s (actrual: %s)\n",next->pid,myzStatus[next->state],temp2);
+
+            cprintf("myz7... before switch process %d kernel ? %d\n",prev_pid,prev_kernel);
+            cprintf("myz7... after switch process %d kernel ? %d\n",next_pid,next_kernel);
+
         }
         local_intr_restore(intr_flag);
     }
@@ -453,13 +490,16 @@ do_exit(int error_code) {
     if (current == initproc) {
         panic("initproc exit.\n");
     }
-    
+    cprintf("myz... before do_exit: proc pid %d will exit, state is %s\n", current->pid, myzStatus[current->state]);
     struct mm_struct *mm = current->mm;
     if (mm != NULL) {
         lcr3(boot_cr3);
         if (mm_count_dec(mm) == 0) {
+        	cprintf("myz8... proc %d exit_mmap\n",current->pid);
             exit_mmap(mm);
+        	cprintf("myz8... proc %d put_pgdir\n",current->pid);
             put_pgdir(mm);
+        	cprintf("myz8... proc %d mm_destroy\n",current->pid);
             mm_destroy(mm);
         }
         current->mm = NULL;
@@ -473,6 +513,7 @@ do_exit(int error_code) {
     {
         proc = current->parent;
         if (proc->wait_state == WT_CHILD) {
+        	cprintf("myz... change to parent: pid %d state %s\n", proc->pid, myzStatus[proc->state]);
             wakeup_proc(proc);
         }
         while (current->cptr != NULL) {
@@ -688,6 +729,7 @@ execve_exit:
 int
 do_yield(void) {
     current->need_resched = 1;
+    cprintf("myz... process %d do_yield\n",current->pid);
     return 0;
 }
 
@@ -712,6 +754,7 @@ repeat:
         if (proc != NULL && proc->parent == current) {
             haskid = 1;
             if (proc->state == PROC_ZOMBIE) {
+            	cprintf("myz...child zombie: id %d state PROC_ZOMBIE\n",proc->pid);
                 goto found;
             }
         }
@@ -727,6 +770,7 @@ repeat:
     }
     if (haskid) {
         current->state = PROC_SLEEPING;
+        cprintf("myz...before sleep: id %d state PROC_SLEEPING\n",current->pid);
         current->wait_state = WT_CHILD;
         schedule();
         if (current->flags & PF_EXITING) {
@@ -745,6 +789,7 @@ found:
     }
     local_intr_save(intr_flag);
     {
+    	cprintf("myz5...remove_links indicate thread dead, id: %d, state: Dead\n",proc->pid);
         unhash_proc(proc);
         remove_links(proc);
     }
@@ -757,6 +802,7 @@ found:
 // do_kill - kill process with pid by set this process's flags with PF_EXITING
 int
 do_kill(int pid) {
+	cprintf("myz... kill process pid: %d\n", pid);
     struct proc_struct *proc;
     if ((proc = find_proc(pid)) != NULL) {
         if (!(proc->flags & PF_EXITING)) {
@@ -820,10 +866,20 @@ init_main(void *arg) {
     size_t nr_free_pages_store = nr_free_pages();
     size_t kernel_allocated_store = kallocated();
 
+    cprintf("myz... create user process original\n");
     int pid = kernel_thread(user_main, NULL, 0);
     if (pid <= 0) {
         panic("create user_main failed.\n");
     }
+
+
+    cprintf("myz... create user process A\n");
+    int pid2 = kernel_thread(user_main, NULL, 0);
+    if (pid2 <= 0)
+    {
+        panic("create user_main2 failed.\n");
+    }
+
 
     while (do_wait(0, NULL) == 0) {
         schedule();
